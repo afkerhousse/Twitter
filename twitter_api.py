@@ -71,12 +71,12 @@ def fetch_tweets(keyword, max_results, next_token=None,  bearer_token=None): #Se
             limit_reset_min = (limit_reset - current_timestamp) / 60
 
             logging.warning(f"Rate limit exceeded. New request allowed in {limit_reset_min} minutes for this endpoint")
-            #sleep(min(2 ** retry, limit_reset_min * 60)) #Exponential backoff wait time
+            sleep(min(2 ** retry, limit_reset_min * 60)) #Exponential backoff wait time
 
-            #TEST: waiting for limit reset time to test next token
-            logging.info(f"Sleeping for {limit_reset_min} minutes...")
-            sleep(limit_reset_min * 60 + 5)
-            logging.info("Resuming execution")
+            #TEST: waiting for limit reset time to test next token -> uncomment below
+            #logging.info(f"Sleeping for {limit_reset_min} minutes...")
+            #sleep(limit_reset_min * 60 + 5)
+            #logging.info("Resuming execution")
 
         #Add other error handling
         else:
@@ -164,6 +164,9 @@ def run_pipeline(keyword="sevdesk", page_max=3, max_results=10):
 
     logging.info(f"PIPELINE END: Total tweets fetched: {total_tweets}")
 
-#run_pipeline(keyword="sevdesk", page_max=3)
+
+### TESTS ###
+
+run_pipeline(keyword="sevdesk", page_max=3)
 #run_pipeline(keyword="accounting", page_max=3, max_results=20)
-run_pipeline(keyword="invoice", page_max=2, max_results=10)
+#run_pipeline(keyword="invoice", page_max=2, max_results=10)
