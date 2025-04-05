@@ -8,7 +8,7 @@ import base64
 from filelock import FileLock
 
 #Load environment variables from .env file
-load_dotenv()
+load_dotenv(override=True)
 
 #Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -22,7 +22,7 @@ def generate_bearer_token():
         logging.error("API Key and API Secret are required.")
         raise ValueError("API Key and API Secret are required.")
 
-    #Encode API key and secret for Basic Authentication
+    #Encode API key and secret for Basic Auth
     credentials = f"{api_key}:{api_secret}".encode("utf-8")
     b64_credentials = base64.b64encode(credentials).decode("utf-8")
 
@@ -41,12 +41,10 @@ def generate_bearer_token():
         logging.info("Bearer Token generated successfully")
         return bearer_token
     else:
-        logging.error(f"Failed to get Bearer Token: {response.text}")
-        raise Exception(f"Failed to get Bearer Token: {response.text}")
+        logging.error(f"Error {response.status_code} to get Bearer Token: {response.text}")
 
 #Function to fetch tweets using X API v2
-def fetch_tweets(keyword, max_results, next_token=None,  bearer_token=None): #Set max_results as parameter
-    bearer_token = bearer_token or os.getenv("BEARER_TOKEN", "default_key")
+def fetch_tweets(keyword, max_results,  bearer_token, next_token=None): #Set max_results as parameter
     headers = {
         "Authorization": f"Bearer {bearer_token}" #Use Bearer token instead of API key
     }
@@ -61,7 +59,11 @@ def fetch_tweets(keyword, max_results, next_token=None,  bearer_token=None): #Se
 
         if response.status_code == 200:
             logging.info("Request successful")
-            return response.json()
+            #Check if the "data" field exists and has content
+            if not response.json().get("data"):
+                return None
+            else:
+                return response.json()
 
         elif response.status_code == 429:
             #Extract rate limit reset time from headers
@@ -87,10 +89,6 @@ def fetch_tweets(keyword, max_results, next_token=None,  bearer_token=None): #Se
 
 #Function to process tweets 
 def process_tweets(data):
-    if not data:
-        logging.error("No tweets to process")
-        return []
-    
     processed_tweets = []
 
     #Add try-except block to handle KeyError
@@ -133,40 +131,46 @@ def save_to_file(data, keyword):
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f)
 
-            logging.info(f"Tweets saved successfully to {filename}")
+            logging.info(f"Tweets saved to JSON file successfully ({filename})")
 
-    except IOError as e:
-        logging.error(f"IOError: {e}. Failed to save tweets to file")
+    except Exception as e:
+        logging.error(f"Error: {e}. Failed to save tweets to file")
 
 def run_pipeline(keyword="sevdesk", page_max=3, max_results=10):
-    logging.info(f"PIPELINE START: fetching {page_max} pages max of tweets for keyword '{keyword}'")
+    logging.info(f'PIPELINE START: keyword="{keyword}", page_max={page_max}, max_results={max_results}')
 
     bearer_token = generate_bearer_token()
+
+    if not bearer_token:
+        logging.error("PIPELINE END: Failed to generate Bearer Token")
+        return
     next_token = None
     total_tweets = 0
     for _ in range(page_max):
-        data = fetch_tweets(keyword, max_results, next_token, bearer_token)
+        logging.info(f"Fetching on page {_+1} for keyword '{keyword}'")
+        data = fetch_tweets(keyword, max_results, bearer_token, next_token)
+
+        if not data:
+            logging.warning("Exiting piepline: no tweets to process")
+            break
+
         processed_tweets = process_tweets(data)
         total_tweets += len(processed_tweets)
 
-        logging.info(f"{len(processed_tweets)} tweets on page {_+1}")
         save_to_file(processed_tweets, keyword)
-
-        if not data:
-            logging.error("No data returned from API")
-            break
 
         #Checking for next_token to fetch next page of tweets
         next_token = data.get("meta", {}).get("next_token", None)
         if not next_token:
-            logging.info("No more pages to fetch")
+            logging.info("Exiting piepline: no more pages to fetch")
             break
 
-    logging.info(f"PIPELINE END: Total tweets fetched: {total_tweets}")
+    logging.info(f"PIPELINE END: total_tweets={total_tweets}")
 
 
 ### TESTS ###
-
-run_pipeline(keyword="sevdesk", page_max=3)
-#run_pipeline(keyword="accounting", page_max=3, max_results=20)
-#run_pipeline(keyword="invoice", page_max=2, max_results=10)
+if __name__ == "__main__":
+    run_pipeline(keyword="sevdesk", page_max=3)
+    #run_pipeline(keyword="accounting", page_max=3, max_results=20)
+    #run_pipeline(keyword="invoice", page_max=2, max_results=10)
+    #run_pipeline(keyword="ksedves", page_max=3)
